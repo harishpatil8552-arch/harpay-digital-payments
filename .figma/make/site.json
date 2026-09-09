@@ -1,0 +1,10 @@
+{
+  "description": "A fully interactive digital payments app prototype enabling secure UPI transactions, bill payments, and analytics with a user-friendly fintech design.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
