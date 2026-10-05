@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { db } from "./db";
+import { getCollection, type ContactDocument, type NotificationDocument, type TransactionDocument, type UserDocument } from "./db";
 import type { Contact, Notification, Transaction, TransactionCategory, TransactionType } from "../src/types";
 
 export type PaymentInput = {
@@ -11,30 +11,12 @@ export type PaymentInput = {
   note?: string;
 };
 
-type AccountRow = {
-  id: string;
-  name: string;
-  phone: string;
-  upiId: string;
-  balance: number;
-  currency: string;
-};
+const userId = "user-harish";
 
-type TransactionRow = Omit<Transaction, "recipientUpiId" | "senderUpiId"> & {
-  recipient_upi_id: string;
-  sender_upi_id: string;
-};
-
-type NotificationRow = Omit<Notification, "read" | "transactionId"> & {
-  read: number;
-  transaction_id: string | null;
-};
-
-function accountRow(): AccountRow {
-  return db.prepare(`
-    SELECT id, name, phone, upi_id AS upiId, balance, currency
-    FROM users WHERE id = ?
-  `).get("user-harish") as AccountRow;
+async function accountRow() {
+  const user = await (await getCollection<UserDocument>("users")).findOne({ id: userId });
+  if (!user) throw new Error("Account not found");
+  return user;
 }
 
 function transactionId() {
@@ -42,131 +24,107 @@ function transactionId() {
   return `HPY${stamp}${Math.floor(Math.random() * 100000).toString().padStart(5, "0")}`;
 }
 
-export function getUser() {
-  const account = accountRow();
-  return {
-    id: account.id,
-    name: account.name,
-    phone: account.phone,
-    upiId: account.upiId,
-  };
+export async function getUser() {
+  const account = await accountRow();
+  return { id: account.id, name: account.name, phone: account.phone, upiId: account.upiId };
 }
 
-export function getAccount() {
-  const account = accountRow();
+export async function getAccount() {
+  const account = await accountRow();
   return {
-    user: getUser(),
+    user: { id: account.id, name: account.name, phone: account.phone, upiId: account.upiId },
     balance: account.balance,
     currency: account.currency,
   };
 }
 
-export function getTransactions() {
-  const rows = db.prepare(`
-    SELECT id, type, category, recipient, recipient_upi_id, sender, sender_upi_id,
-      amount, note, date, status
-    FROM transactions ORDER BY date DESC
-  `).all() as TransactionRow[];
-  return rows.map(({ recipient_upi_id, sender_upi_id, ...transaction }) => ({
-    ...transaction,
-    recipientUpiId: recipient_upi_id,
-    senderUpiId: sender_upi_id,
-  }));
+export async function getTransactions(): Promise<Transaction[]> {
+  return (await getCollection<TransactionDocument>("transactions"))
+    .find({}, { projection: { _id: 0 } })
+    .sort({ date: -1 })
+    .toArray();
 }
 
-export function getNotifications() {
-  const rows = db.prepare(`
-    SELECT id, type, title, message, date, read, transaction_id
-    FROM notifications ORDER BY date DESC
-  `).all() as NotificationRow[];
-  return rows.map(({ read, transaction_id, ...notification }) => ({
-    ...notification,
-    read: Boolean(read),
-    ...(transaction_id ? { transactionId: transaction_id } : {}),
-  }));
+export async function getNotifications(): Promise<Notification[]> {
+  return (await getCollection<NotificationDocument>("notifications"))
+    .find({}, { projection: { _id: 0 } })
+    .sort({ date: -1 })
+    .toArray();
 }
 
-export function getContacts(): Contact[] {
-  return db.prepare(`
-    SELECT id, name, upi_id AS upiId, phone, initials, color
-    FROM contacts ORDER BY name
-  `).all() as Contact[];
+export async function getContacts(): Promise<Contact[]> {
+  return (await getCollection<ContactDocument>("contacts"))
+    .find({}, { projection: { _id: 0 } })
+    .sort({ name: 1 })
+    .toArray();
 }
 
-export function lookupUpi(upiId: string) {
-  const match = db.prepare(`
-    SELECT name, verified
-    FROM upi_directory WHERE upi_id = ?
-  `).get(upiId) as { name: string; verified: number } | undefined;
-  return match ? { name: match.name, verified: Boolean(match.verified) } : null;
+export async function lookupUpi(upiId: string) {
+  const match = await (await getCollection<{ upiId: string; name: string; verified: boolean }>("upi_directory"))
+    .findOne({ upiId }, { projection: { _id: 0, name: 1, verified: 1 } });
+  return match ? { name: match.name, verified: match.verified } : null;
 }
 
-export function markNotificationRead(id: string) {
-  const result = db.prepare("UPDATE notifications SET read = 1 WHERE id = ?").run(id);
-  return result.changes > 0;
+export async function markNotificationRead(id: string) {
+  const result = await (await getCollection<NotificationDocument>("notifications"))
+    .updateOne({ id }, { $set: { read: true } });
+  return result.matchedCount > 0;
 }
 
-export function markAllNotificationsRead() {
-  db.prepare("UPDATE notifications SET read = 1 WHERE read = 0").run();
+export async function markAllNotificationsRead() {
+  await (await getCollection<NotificationDocument>("notifications"))
+    .updateMany({ read: false }, { $set: { read: true } });
 }
 
-export function createPayment(input: PaymentInput) {
+export async function createPayment(input: PaymentInput) {
   if (!Number.isFinite(input.amount) || input.amount <= 0) {
     throw new Error("Amount must be greater than zero");
   }
-  if (input.amount > getAccount().balance) {
-    throw new Error("Insufficient balance");
+
+  const users = await getCollection<UserDocument>("users");
+  const transactions = await getCollection<TransactionDocument>("transactions");
+  const notifications = await getCollection<NotificationDocument>("notifications");
+  const now = new Date().toISOString();
+  const transaction: Transaction = {
+    id: transactionId(),
+    type: input.type ?? "sent",
+    category: input.category ?? "payment",
+    recipient: input.recipient,
+    recipientUpiId: input.recipientUpiId,
+    sender: (await getUser()).name,
+    senderUpiId: (await getUser()).upiId,
+    amount: input.amount,
+    note: input.note ?? "",
+    date: now,
+    status: "successful",
+  };
+
+  const debit = await users.updateOne(
+    { id: userId, balance: { $gte: input.amount } },
+    { $inc: { balance: -input.amount } },
+  );
+  if (debit.modifiedCount === 0) {
+    const account = await accountRow();
+    if (input.amount > account.balance) throw new Error("Insufficient balance");
+    throw new Error("Unable to update account balance");
   }
 
-  const createPayment = db.transaction(() => {
-    const now = new Date().toISOString();
-    const transaction: Transaction = {
-      id: transactionId(),
-      type: input.type ?? "sent",
-      category: input.category ?? "payment",
-      recipient: input.recipient,
-      recipientUpiId: input.recipientUpiId,
-      sender: getUser().name,
-      senderUpiId: getUser().upiId,
-      amount: input.amount,
-      note: input.note ?? "",
+  try {
+    await transactions.insertOne(transaction);
+    await notifications.insertOne({
+      id: randomUUID(),
+      type: "success",
+      title: "Payment Successful",
+      message: `₹${input.amount.toLocaleString()} paid to ${input.recipient}`,
       date: now,
-      status: "successful",
-    };
+      read: false,
+      transactionId: transaction.id,
+    });
+  } catch (error) {
+    await users.updateOne({ id: userId }, { $inc: { balance: input.amount } });
+    await transactions.deleteOne({ id: transaction.id });
+    throw error;
+  }
 
-    db.prepare("UPDATE users SET balance = balance - ? WHERE id = ?").run(input.amount, "user-harish");
-    db.prepare(`
-      INSERT INTO transactions
-        (id, type, category, recipient, recipient_upi_id, sender, sender_upi_id, amount, note, date, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      transaction.id,
-      transaction.type,
-      transaction.category,
-      transaction.recipient,
-      transaction.recipientUpiId,
-      transaction.sender,
-      transaction.senderUpiId,
-      transaction.amount,
-      transaction.note,
-      transaction.date,
-      transaction.status,
-    );
-    db.prepare(`
-      INSERT INTO notifications (id, type, title, message, date, read, transaction_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      randomUUID(),
-      "success",
-      "Payment Successful",
-      `₹${input.amount.toLocaleString()} paid to ${input.recipient}`,
-      now,
-      0,
-      transaction.id,
-    );
-
-    return { transaction, account: getAccount() };
-  });
-
-  return createPayment();
+  return { transaction, account: await getAccount() };
 }
