@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useReducer, useEffect, useState, useCallback } from "react";
 import { Transaction, Notification, AppSettings, Screen, PendingPayment } from "./types";
 import { INITIAL_TRANSACTIONS, INITIAL_NOTIFICATIONS } from "./data";
+import { createPayment as createPaymentRequest } from "./api";
 
 interface Toast {
   id: string;
@@ -13,6 +14,7 @@ interface AppUser {
   name: string;
   phone: string;
   upiId: string;
+  token: string;
 }
 
 interface AppState {
@@ -130,7 +132,7 @@ interface AppContextValue {
   screenStack: Screen[];
   toasts: Toast[];
   showToast: (message: string, type?: "success" | "error" | "info") => void;
-  addTransaction: (tx: Omit<Transaction, "id" | "date">) => Transaction;
+  addTransaction: (tx: Omit<Transaction, "id" | "date">) => Promise<Transaction>;
   generateTxId: () => string;
 }
 
@@ -139,8 +141,8 @@ const AppContext = createContext<AppContextValue | null>(null);
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const saved = loadState();
   const [state, dispatch] = useReducer(reducer, {
-    isLoggedIn: saved.isLoggedIn ?? false,
-    user: saved.user ?? null,
+    isLoggedIn: Boolean(saved.isLoggedIn && saved.user?.token),
+    user: saved.user?.token ? saved.user : null,
     balance: saved.balance ?? 5000,
     transactions: saved.transactions ?? INITIAL_TRANSACTIONS,
     notifications: saved.notifications ?? INITIAL_NOTIFICATIONS,
@@ -196,19 +198,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return `HPY${ymd}${rand}`;
   }, []);
 
-  const addTransaction = useCallback((txData: Omit<Transaction, "id" | "date">) => {
-    const tx: Transaction = {
-      ...txData,
-      id: generateTxId(),
-      date: new Date().toISOString(),
-    };
-
-    const isSent = txData.type === "sent" || txData.type === "bill" || txData.type === "recharge";
-    const balanceDelta = txData.status === "successful"
-      ? isSent ? -txData.amount : txData.type === "received" ? txData.amount : 0
-      : 0;
-
-    dispatch({ type: "ADD_TRANSACTION", tx, balanceDelta });
+  const addTransaction = useCallback(async (txData: Omit<Transaction, "id" | "date">) => {
+    if (!state.user) throw new Error("Please sign in again before making a payment.");
+    const { transaction: tx, account } = await createPaymentRequest(txData, state.user.phone, state.user.token);
+    dispatch({ type: "ADD_TRANSACTION", tx });
+    dispatch({ type: "SET_BALANCE", amount: account.balance });
 
     const notif = {
       id: Math.random().toString(36).slice(2),
@@ -223,7 +217,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
     dispatch({ type: "ADD_NOTIFICATION", n: notif });
     return tx;
-  }, [generateTxId]);
+  }, [state.user]);
 
   const currentScreen = screenStack[screenStack.length - 1];
 

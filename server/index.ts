@@ -47,7 +47,11 @@ app.post("/api/auth/verify-otp", async (req, res) => {
     balance: Number(req.body?.balance ?? 5000),
   });
 
-  res.json({ token: demoToken, user: { id: user.id, name: user.name, phone: user.phone, upiId: user.upiId } });
+  res.json({
+    token: demoToken,
+    user: { id: user.id, name: user.name, phone: user.phone, upiId: user.upiId },
+    balance: user.balance,
+  });
 });
 
 function requireAuth(req: Request, res: Response, next: NextFunction) {
@@ -94,7 +98,7 @@ app.post("/api/notifications/read-all", async (_req, res) => {
 
 app.post("/api/payments", async (req, res) => {
   try {
-    const result = await createPayment(req.body);
+    const result = await createPayment(req.body, String(req.body?.phone ?? ""));
     res.status(201).json(result);
   } catch (error) {
     res.status(400).json({ error: error instanceof Error ? error.message : "Unable to create payment" });

@@ -52,10 +52,11 @@ export default function Scan() {
     setStep("pin");
   }
 
-  function handlePinSuccess() {
+  async function handlePinSuccess() {
     setStep("processing");
-    setTimeout(() => {
-      const tx = addTransaction({
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 2200));
+      const tx = await addTransaction({
         type: "sent",
         category: "payment",
         recipient: recipient!.name,
@@ -68,7 +69,10 @@ export default function Scan() {
       });
       setTransaction(tx);
       setStep("success");
-    }, 2200);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Unable to save payment", "error");
+      setStep("confirm");
+    }
   }
 
   function handleDone() {

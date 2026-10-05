@@ -28,10 +28,11 @@ export default function Recharge() {
     setStep("confirm");
   }
 
-  function handlePinSuccess() {
+  async function handlePinSuccess() {
     setStep("processing");
-    setTimeout(() => {
-      const tx = addTransaction({
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      const tx = await addTransaction({
         type: "recharge",
         category: "mobile",
         recipient: `${operator} Mobile`,
@@ -44,7 +45,10 @@ export default function Recharge() {
       });
       setTransaction(tx);
       setStep("success");
-    }, 2000);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Unable to save payment", "error");
+      setStep("confirm");
+    }
   }
 
   if (step === "processing") return <ProcessingOverlay recipientName={`${operator} Recharge`} amount={String(selectedPlan?.price ?? 0)} />;

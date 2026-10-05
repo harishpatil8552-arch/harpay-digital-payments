@@ -60,10 +60,11 @@ export default function SendMoney() {
     else if (method === "phone") lookupPhone(input);
   }
 
-  function handlePinSuccess() {
+  async function handlePinSuccess() {
     setStep("processing");
-    setTimeout(() => {
-      const tx = addTransaction({
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      const tx = await addTransaction({
         type: "sent",
         category: "payment",
         recipient: recipient!.name,
@@ -76,7 +77,10 @@ export default function SendMoney() {
       });
       setTransaction(tx);
       setStep("success");
-    }, 2000);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Unable to save payment", "error");
+      setStep("confirm");
+    }
   }
 
   if (step === "processing") return <ProcessingOverlay recipientName={recipient?.name ?? ""} amount={amount} />;

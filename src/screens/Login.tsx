@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { ArrowLeft, ChevronRight, RefreshCw, CheckCircle2 } from "lucide-react";
 import Logo from "../components/Logo";
 import { useApp } from "../context";
+import { requestOtp, verifyOtp } from "../api";
 
 type LoginStep = "phone" | "otp" | "success";
 
@@ -12,6 +13,7 @@ export default function Login() {
   const { dispatch } = useApp();
   const [step, setStep] = useState<LoginStep>("phone");
   const [phone, setPhone] = useState("");
+  const [requestId, setRequestId] = useState("");
   const [otp, setOtp] = useState(["","","","","",""]);
   const [phoneError, setPhoneError] = useState("");
   const [otpError, setOtpError] = useState("");
@@ -33,14 +35,22 @@ export default function Login() {
     }
   }, [step]);
 
-  function handlePhoneContinue() {
+  async function handlePhoneContinue() {
     if (!/^[6-9]\d{9}$/.test(phone)) {
       setPhoneError("Please enter a valid 10-digit mobile number");
       return;
     }
     setPhoneError("");
     setLoading(true);
-    setTimeout(() => { setLoading(false); setStep("otp"); }, 800);
+    try {
+      const result = await requestOtp(phone);
+      setRequestId(result.requestId);
+      setStep("otp");
+    } catch (error) {
+      setPhoneError(error instanceof Error ? error.message : "Unable to connect to the payment service");
+    } finally {
+      setLoading(false);
+    }
   }
 
   function handleOtpChange(idx: number, val: string) {
@@ -59,7 +69,7 @@ export default function Login() {
     }
   }
 
-  function handleVerifyOtp() {
+  async function handleVerifyOtp() {
     const entered = otp.join("");
     if (entered.length < 6) {
       setOtpError("Please enter the complete 6-digit OTP");
@@ -71,14 +81,16 @@ export default function Login() {
     }
     setOtpError("");
     setLoading(true);
-    setTimeout(() => {
-      const cleanPhone = phone.replace(/\D/g, "");
-      const name = `User ${cleanPhone.slice(-4)}`;
-      const upiId = `${name.toLowerCase().replace(/[^a-z0-9]/g, "") || `user${cleanPhone.slice(-4)}`}@harpay`;
-      setLoading(false);
+    try {
+      const result = await verifyOtp(phone, requestId, entered);
+      dispatch({ type: "SET_BALANCE", amount: result.balance });
       setStep("success");
-      setTimeout(() => dispatch({ type: "LOGIN", user: { id: `user-${cleanPhone}`, name, phone: cleanPhone, upiId } }), 1200);
-    }, 1000);
+      setTimeout(() => dispatch({ type: "LOGIN", user: { ...result.user, token: result.token } }), 1200);
+    } catch (error) {
+      setOtpError(error instanceof Error ? error.message : "Unable to verify OTP");
+    } finally {
+      setLoading(false);
+    }
   }
 
   function resendOtp() {

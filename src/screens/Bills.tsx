@@ -49,10 +49,11 @@ export default function BillScreen({ billType }: BillScreenProps) {
     return Object.keys(errs).length === 0;
   }
 
-  function handlePinSuccess() {
+  async function handlePinSuccess() {
     setStep("processing");
-    setTimeout(() => {
-      const tx = addTransaction({
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      const tx = await addTransaction({
         type: "bill",
         category: config.category as any,
         recipient: `${provider}`,
@@ -65,7 +66,10 @@ export default function BillScreen({ billType }: BillScreenProps) {
       });
       setTransaction(tx);
       setStep("success");
-    }, 2000);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Unable to save payment", "error");
+      setStep("confirm");
+    }
   }
 
   if (step === "processing") return <ProcessingOverlay recipientName={provider} amount={amount} />;
