@@ -2,7 +2,7 @@ import "dotenv/config";
 import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { getDatabase } from "./db";
-import { createPayment, getAccount, getContacts, getNotifications, getTransactions, lookupUpi, markAllNotificationsRead, markNotificationRead } from "./store";
+import { createPayment, getAccount, getContacts, getNotifications, getOrCreateUser, getTransactions, lookupUpi, markAllNotificationsRead, markNotificationRead } from "./store";
 
 const app = express();
 const port = Number(process.env.API_PORT ?? 4000);
@@ -34,7 +34,20 @@ app.post("/api/auth/verify-otp", async (req, res) => {
     res.status(401).json({ error: "Invalid demo OTP" });
     return;
   }
-  res.json({ token: demoToken, user: (await getAccount()).user });
+
+  const phone = String(req.body?.phone ?? "");
+  if (!/^[6-9]\d{9}$/.test(phone)) {
+    res.status(400).json({ error: "A valid 10-digit Indian mobile number is required" });
+    return;
+  }
+
+  const user = await getOrCreateUser({
+    phone,
+    name: req.body?.name ? String(req.body.name) : `User ${phone.slice(-4)}`,
+    balance: Number(req.body?.balance ?? 5000),
+  });
+
+  res.json({ token: demoToken, user: { id: user.id, name: user.name, phone: user.phone, upiId: user.upiId } });
 });
 
 function requireAuth(req: Request, res: Response, next: NextFunction) {

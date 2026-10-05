@@ -18,6 +18,8 @@ interface MenuItem {
 
 export default function Profile() {
   const { goBack, navigate, dispatch, state } = useApp();
+  const user = state.user ?? { name: "User", phone: "+91 00000 00000", upiId: "user@harpay" };
+  const initials = user.name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "U";
 
   const menuSections: { title: string; items: MenuItem[] }[] = [
     {
@@ -79,15 +81,15 @@ export default function Profile() {
       <div className="flex-1 overflow-y-auto">
         <div className="bg-gradient-to-br from-[#1e3058] to-[#2d4a7a] px-5 py-6 flex items-center gap-4">
           <div className="w-16 h-16 rounded-full bg-green-500 flex items-center justify-center text-xl font-bold text-white shadow-lg">
-            HP
+            {initials}
           </div>
           <div>
-            <h2 className="text-lg font-bold text-white">Harish Patil</h2>
+            <h2 className="text-lg font-bold text-white">{user.name}</h2>
             <p className="text-white/70 text-sm flex items-center gap-1.5 mt-0.5">
-              <Phone size={12} /> +91 98765 43210
+              <Phone size={12} /> {user.phone ? `+91 ${user.phone.slice(0, 5)} ${user.phone.slice(5)}` : "+91 00000 00000"}
             </p>
             <div className="flex items-center gap-1.5 mt-1">
-              <span className="text-white/60 text-xs">harish@harpay</span>
+              <span className="text-white/60 text-xs">{user.upiId}</span>
               <span className="text-[10px] px-1.5 py-0.5 bg-green-500/20 text-green-300 rounded-full">Active</span>
             </div>
           </div>

@@ -3,14 +3,14 @@ import { QRCodeSVG } from "qrcode.react";
 import Logo from "../components/Logo";
 import { useApp } from "../context";
 
-const USER_UPI = "harish@harpay";
-const USER_NAME = "Harish Patil";
-
 export default function MyQR() {
-  const { goBack, showToast } = useApp();
+  const { goBack, showToast, state } = useApp();
+  const user = state.user ?? { name: "User", upiId: "user@harpay" };
+  const userUpi = user.upiId;
+  const userName = user.name;
 
   function copyUpi() {
-    navigator.clipboard.writeText(USER_UPI).then(() => showToast("UPI ID copied!"));
+    navigator.clipboard.writeText(userUpi).then(() => showToast("UPI ID copied!"));
   }
 
   return (
@@ -29,7 +29,7 @@ export default function MyQR() {
 
           <div className="p-4 bg-white rounded-2xl shadow-inner border border-gray-100">
             <QRCodeSVG
-              value={`upi://pay?pa=${USER_UPI}&pn=${encodeURIComponent(USER_NAME)}&am=&cu=INR`}
+              value={`upi://pay?pa=${userUpi}&pn=${encodeURIComponent(userName)}&am=&cu=INR`}
               size={200}
               fgColor="#1e3058"
               level="M"
@@ -38,12 +38,12 @@ export default function MyQR() {
           </div>
 
           <div className="mt-4 text-center">
-            <h3 className="font-bold text-gray-900 dark:text-white text-lg">{USER_NAME}</h3>
+            <h3 className="font-bold text-gray-900 dark:text-white text-lg">{userName}</h3>
             <button
               onClick={copyUpi}
               className="flex items-center gap-1.5 mt-1.5 px-3 py-1.5 bg-[#1e3058]/8 dark:bg-gray-800 rounded-lg text-[#1e3058] dark:text-green-400 text-sm font-medium active:scale-95 transition-all mx-auto"
             >
-              <span>{USER_UPI}</span>
+              <span>{userUpi}</span>
               <Copy size={13} />
             </button>
           </div>
@@ -78,7 +78,7 @@ export default function MyQR() {
           >
             <div>
               <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">UPI ID</p>
-              <p className="text-xs text-gray-400 dark:text-gray-500">{USER_UPI}</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500">{userUpi}</p>
             </div>
             <div className="flex items-center gap-2">
               <Copy size={16} className="text-gray-400" />

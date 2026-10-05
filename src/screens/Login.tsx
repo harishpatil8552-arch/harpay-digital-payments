@@ -72,9 +72,12 @@ export default function Login() {
     setOtpError("");
     setLoading(true);
     setTimeout(() => {
+      const cleanPhone = phone.replace(/\D/g, "");
+      const name = `User ${cleanPhone.slice(-4)}`;
+      const upiId = `${name.toLowerCase().replace(/[^a-z0-9]/g, "") || `user${cleanPhone.slice(-4)}`}@harpay`;
       setLoading(false);
       setStep("success");
-      setTimeout(() => dispatch({ type: "LOGIN" }), 1200);
+      setTimeout(() => dispatch({ type: "LOGIN", user: { id: `user-${cleanPhone}`, name, phone: cleanPhone, upiId } }), 1200);
     }, 1000);
   }
 
@@ -94,7 +97,7 @@ export default function Login() {
     return (
       <div className="h-full flex flex-col items-center justify-center bg-white dark:bg-gray-900 screen-enter">
         <CheckCircle2 size={80} className="text-green-500 animate-pop-in mb-4" />
-        <p className="text-2xl font-bold text-gray-900 dark:text-white animate-fade-in">Welcome, Harish!</p>
+        <p className="text-2xl font-bold text-gray-900 dark:text-white animate-fade-in">Welcome, {phone ? `User ${phone.slice(-4)}` : "User"}!</p>
         <p className="text-gray-400 dark:text-gray-500 animate-fade-in">Loading your dashboard...</p>
       </div>
     );

@@ -11,11 +11,42 @@ export type PaymentInput = {
   note?: string;
 };
 
-const userId = "user-harish";
-
-async function accountRow() {
-  const user = await (await getCollection<UserDocument>("users")).findOne({ id: userId });
+async function accountRow(phone?: string) {
+  const users = await getCollection<UserDocument>("users");
+  const user = phone ? await users.findOne({ phone }) : await users.findOne({});
   if (!user) throw new Error("Account not found");
+  return user;
+}
+
+export async function getOrCreateUser(input: { phone: string; name?: string; upiId?: string; balance?: number; currency?: string }) {
+  const users = await getCollection<UserDocument>("users");
+  const phone = String(input.phone).replace(/\D/g, "");
+  if (!/^[6-9]\d{9}$/.test(phone)) {
+    throw new Error("A valid 10-digit Indian mobile number is required");
+  }
+
+  const existing = await users.findOne({ phone });
+  if (existing) return existing;
+
+  const baseName = (input.name ?? `User ${phone.slice(-4)}`).trim() || `User ${phone.slice(-4)}`;
+  const baseUpi = (input.upiId ?? `${baseName.toLowerCase().replace(/[^a-z0-9]/g, "") || `user${phone.slice(-4)}`}@harpay`).toLowerCase();
+  let upiId = baseUpi;
+  let suffix = 1;
+  while (await users.findOne({ upiId })) {
+    upiId = `${baseUpi.split("@")[0]}${suffix}@harpay`;
+    suffix += 1;
+  }
+
+  const user: UserDocument = {
+    id: `user-${Math.random().toString(36).slice(2, 10)}`,
+    name: baseName,
+    phone,
+    upiId,
+    balance: input.balance ?? 5000,
+    currency: input.currency ?? "INR",
+  };
+
+  await users.insertOne(user);
   return user;
 }
 
@@ -24,13 +55,13 @@ function transactionId() {
   return `HPY${stamp}${Math.floor(Math.random() * 100000).toString().padStart(5, "0")}`;
 }
 
-export async function getUser() {
-  const account = await accountRow();
+export async function getUser(phone?: string) {
+  const account = await accountRow(phone);
   return { id: account.id, name: account.name, phone: account.phone, upiId: account.upiId };
 }
 
-export async function getAccount() {
-  const account = await accountRow();
+export async function getAccount(phone?: string) {
+  const account = await accountRow(phone);
   return {
     user: { id: account.id, name: account.name, phone: account.phone, upiId: account.upiId },
     balance: account.balance,
@@ -76,11 +107,12 @@ export async function markAllNotificationsRead() {
     .updateMany({ read: false }, { $set: { read: true } });
 }
 
-export async function createPayment(input: PaymentInput) {
+export async function createPayment(input: PaymentInput, phone?: string) {
   if (!Number.isFinite(input.amount) || input.amount <= 0) {
     throw new Error("Amount must be greater than zero");
   }
 
+  const account = await accountRow(phone);
   const users = await getCollection<UserDocument>("users");
   const transactions = await getCollection<TransactionDocument>("transactions");
   const notifications = await getCollection<NotificationDocument>("notifications");
@@ -91,8 +123,8 @@ export async function createPayment(input: PaymentInput) {
     category: input.category ?? "payment",
     recipient: input.recipient,
     recipientUpiId: input.recipientUpiId,
-    sender: (await getUser()).name,
-    senderUpiId: (await getUser()).upiId,
+    sender: account.name,
+    senderUpiId: account.upiId,
     amount: input.amount,
     note: input.note ?? "",
     date: now,
@@ -100,11 +132,10 @@ export async function createPayment(input: PaymentInput) {
   };
 
   const debit = await users.updateOne(
-    { id: userId, balance: { $gte: input.amount } },
+    { id: account.id, balance: { $gte: input.amount } },
     { $inc: { balance: -input.amount } },
   );
   if (debit.modifiedCount === 0) {
-    const account = await accountRow();
     if (input.amount > account.balance) throw new Error("Insufficient balance");
     throw new Error("Unable to update account balance");
   }
@@ -121,10 +152,10 @@ export async function createPayment(input: PaymentInput) {
       transactionId: transaction.id,
     });
   } catch (error) {
-    await users.updateOne({ id: userId }, { $inc: { balance: input.amount } });
+    await users.updateOne({ id: account.id }, { $inc: { balance: input.amount } });
     await transactions.deleteOne({ id: transaction.id });
     throw error;
   }
 
-  return { transaction, account: await getAccount() };
+  return { transaction, account: await getAccount(account.phone) };
 }

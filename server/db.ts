@@ -59,21 +59,6 @@ async function initializeDatabase(database: Db) {
     contacts.createIndex({ upiId: 1 }, { unique: true }),
   ]);
 
-  await users.updateOne(
-    { id: "user-harish" },
-    {
-      $setOnInsert: {
-        id: "user-harish",
-        name: "Harish Patil",
-        phone: "9876543210",
-        upiId: "harish@harpay",
-        balance: 25450,
-        currency: "INR",
-      },
-    },
-    { upsert: true },
-  );
-
   if ((await transactions.countDocuments()) === 0) {
     await transactions.insertMany(INITIAL_TRANSACTIONS);
   }

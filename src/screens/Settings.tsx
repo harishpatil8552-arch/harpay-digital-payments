@@ -26,6 +26,7 @@ type Section = "main" | "personal" | "security" | "notifications" | "appearance"
 export default function Settings() {
   const { goBack, state, dispatch } = useApp();
   const { settings, darkMode } = state;
+  const user = state.user ?? { name: "User", phone: "0000000000", upiId: "user@harpay" };
   const [section, setSection] = useState<Section>("main");
 
   function update(key: string, value: unknown) {
@@ -43,11 +44,11 @@ export default function Settings() {
         </div>
         <div className="flex-1 px-5 pt-6 space-y-4">
           {[
-            { label: "Full Name", value: "Harish Patil" },
-            { label: "Mobile Number", value: "+91 98765 43210" },
-            { label: "Email", value: "harish.patil@email.com" },
-            { label: "PAN Number", value: "ABCDE1234F" },
-            { label: "Date of Birth", value: "15 March 1992" },
+            { label: "Full Name", value: user.name },
+            { label: "Mobile Number", value: `+91 ${user.phone}` },
+            { label: "UPI ID", value: user.upiId },
+            { label: "Account ID", value: user.id ?? "demo-user" },
+            { label: "Status", value: "Active" },
           ].map((f) => (
             <div key={f.label} className="border-b border-gray-100 dark:border-gray-800 pb-4">
               <p className="text-xs text-gray-400 dark:text-gray-500 mb-1">{f.label}</p>

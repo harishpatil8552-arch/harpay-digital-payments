@@ -8,8 +8,16 @@ interface Toast {
   type: "success" | "error" | "info";
 }
 
+interface AppUser {
+  id: string;
+  name: string;
+  phone: string;
+  upiId: string;
+}
+
 interface AppState {
   isLoggedIn: boolean;
+  user: AppUser | null;
   balance: number;
   transactions: Transaction[];
   notifications: Notification[];
@@ -20,10 +28,10 @@ interface AppState {
 }
 
 type Action =
-  | { type: "LOGIN" }
+  | { type: "LOGIN"; user?: AppUser }
   | { type: "LOGOUT" }
   | { type: "SET_BALANCE"; amount: number }
-  | { type: "ADD_TRANSACTION"; tx: Transaction }
+  | { type: "ADD_TRANSACTION"; tx: Transaction; balanceDelta?: number }
   | { type: "ADD_NOTIFICATION"; n: Notification }
   | { type: "MARK_NOTIFICATION_READ"; id: string }
   | { type: "MARK_ALL_READ" }
@@ -58,6 +66,7 @@ function saveState(state: AppState) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       isLoggedIn: state.isLoggedIn,
+      user: state.user,
       balance: state.balance,
       transactions: state.transactions,
       notifications: state.notifications,
@@ -69,11 +78,19 @@ function saveState(state: AppState) {
 
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
-    case "LOGIN": return { ...state, isLoggedIn: true };
-    case "LOGOUT": return { ...state, isLoggedIn: false };
+    case "LOGIN": return { ...state, isLoggedIn: true, user: action.user ?? state.user };
+    case "LOGOUT": return { ...state, isLoggedIn: false, user: null };
     case "SET_BALANCE": return { ...state, balance: action.amount };
-    case "ADD_TRANSACTION":
-      return { ...state, transactions: [action.tx, ...state.transactions] };
+    case "ADD_TRANSACTION": {
+      const nextBalance = typeof action.balanceDelta === "number"
+        ? state.balance + action.balanceDelta
+        : state.balance;
+      return {
+        ...state,
+        balance: nextBalance,
+        transactions: [action.tx, ...state.transactions],
+      };
+    }
     case "ADD_NOTIFICATION":
       return { ...state, notifications: [action.n, ...state.notifications] };
     case "MARK_NOTIFICATION_READ":
@@ -123,7 +140,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const saved = loadState();
   const [state, dispatch] = useReducer(reducer, {
     isLoggedIn: saved.isLoggedIn ?? false,
-    balance: saved.balance ?? 25450,
+    user: saved.user ?? null,
+    balance: saved.balance ?? 5000,
     transactions: saved.transactions ?? INITIAL_TRANSACTIONS,
     notifications: saved.notifications ?? INITIAL_NOTIFICATIONS,
     settings: saved.settings ?? defaultSettings,
@@ -136,7 +154,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   useEffect(() => {
-    saveState(state);
+    saveState({
+      isLoggedIn: state.isLoggedIn,
+      user: state.user,
+      balance: state.balance,
+      transactions: state.transactions,
+      notifications: state.notifications,
+      settings: state.settings,
+      darkMode: state.darkMode,
+      selectedTransaction: state.selectedTransaction,
+      pendingPayment: state.pendingPayment,
+    });
   }, [state]);
 
   useEffect(() => {
@@ -174,15 +202,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       id: generateTxId(),
       date: new Date().toISOString(),
     };
-    dispatch({ type: "ADD_TRANSACTION", tx });
+
     const isSent = txData.type === "sent" || txData.type === "bill" || txData.type === "recharge";
-    if (txData.status === "successful") {
-      if (isSent) {
-        dispatch({ type: "SET_BALANCE", amount: state.balance - txData.amount });
-      } else if (txData.type === "received") {
-        dispatch({ type: "SET_BALANCE", amount: state.balance + txData.amount });
-      }
-    }
+    const balanceDelta = txData.status === "successful"
+      ? isSent ? -txData.amount : txData.type === "received" ? txData.amount : 0
+      : 0;
+
+    dispatch({ type: "ADD_TRANSACTION", tx, balanceDelta });
+
     const notif = {
       id: Math.random().toString(36).slice(2),
       type: txData.status === "failed" ? ("failed" as const) : txData.type === "received" ? ("received" as const) : ("success" as const),
@@ -196,7 +223,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
     dispatch({ type: "ADD_NOTIFICATION", n: notif });
     return tx;
-  }, [state.balance, generateTxId]);
+  }, [generateTxId]);
 
   const currentScreen = screenStack[screenStack.length - 1];
 
